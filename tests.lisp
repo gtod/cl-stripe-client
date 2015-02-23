@@ -38,7 +38,7 @@
 (defparameter *default-charge*
   `(("amount" . 100)
     ("currency" . "usd")
-    ("card" . ,*default-card*)))
+    ("source" . ,*default-card*)))
 
 (defparameter *default-token*
   `(("card" . ,*default-card*)))
@@ -398,7 +398,7 @@
   (let* ((created-token (create-token *default-token*)))
     (create-charge `(("amount" . 199)
                      ("currency" . "usd")
-                     ("card" . ,(id created-token))))
+                     ("source" . ,(id created-token))))
     (let ((retrieved-token (retrieve-token (id created-token))))
       (is (token-used retrieved-token)))))
 

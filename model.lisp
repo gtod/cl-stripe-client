@@ -7,7 +7,7 @@
 (defparameter *charset* :utf-8
   "The desired charset.")
 
-(defvar *api-version* "2013-12-03"
+(defvar *api-version* "2015-02-18"
   "The supported Stripe API version.")
 
 (defvar *api-key*)
@@ -520,21 +520,25 @@ bracketed arrays."
 
 (defmodel charge (api-resource)
   (amount
+   captured
    currency
    paid
    refunded
-   disputed
-   captured
-   description
-   failure-message
-   failure-code
-   amount-refunded
-   customer
-   invoice
    refunds
-   card
+   source
+   status
+   amount-refunded
+   balance-transaction
+   customer
+   description
    dispute
-   balance-transaction)
+   failure-code
+   failure-message
+   invoice
+   receipt-email
+   receipt-number
+   fraud-details
+   shipping)
   (:default-initargs :refunds nil)
   (:simple-methods create retrieve update list))
 
@@ -719,7 +723,7 @@ bracketed arrays."
    adjustment-count charge-count charge-gross))
 
 (defmodel token (stripe-object)
-  (amount currency used card)
+  (type used bank-account card client-ip)
   (:simple-methods create retrieve))
 
 (defmethod create-card ((customer customer) (token token))
