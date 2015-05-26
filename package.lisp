@@ -1,7 +1,7 @@
 ;;;; package.lisp
 
 (defpackage #:cl-stripe-client
-  (:use #:cl #:alexandria #:serapeum)
+  (:use #:cl #:alexandria #:serapeum #:cl-async-future)
   (:nicknames #:stripe)
   (:shadow #:get #:delete)
   (:export #:*api-key*

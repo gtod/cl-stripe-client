@@ -7,7 +7,7 @@
 (defparameter *charset* :utf-8
   "The desired charset.")
 
-(defvar *api-version* "2015-02-18"
+(defvar *api-version* "2015-04-07"
   "The supported Stripe API version.")
 
 (defvar *api-key*)
@@ -95,6 +95,11 @@ If no API key is set, signal a continuable error."
       (t   (error 'api-error
                   :message message
                   :url url)))))
+
+(defun concise-error-message (condition)
+  (format nil "~A: ~A"
+          (stripe-error-code condition)
+          (stripe-error-message condition)))
 
 
 ;;;; The defmodel macro.
@@ -215,43 +220,35 @@ optionally, trivial CRUD methods."
 
 ;;;; Making API requests.
 
-(defmacro with-deadline (seconds &body body)
-  "Compatibility wrapper for SBCL's `with-deadline'."
-  (declare (ignorable seconds))
-  #+sbcl `(sb-sys:with-deadline (:seconds ,seconds)
-            ,@body)
-  #-sbcl `(progn ,@body))
-
 (defun request (method url &optional params)
   (check-type method (member :get :post :delete))
-  (setf url (puri:merge-uris url *api-base*))
-  (multiple-value-bind (body status)
-      (handler-case
-          (with-deadline 80
-            (let ((drakma:*text-content-types* (list (cons "application" "json"))))
-              (drakma:http-request url
-                                   :allow-other-keys t
-                                   :method method
-                                   :basic-authorization `(,(get-api-key) "")
-                                   :form-data nil
-                                   :force-ssl t
-                                   :connection-timeout 30
-                                   :additional-headers `(("Accept-Charset" . ,*charset*)
-                                                         ,@(if (boundp '*api-version*)
-                                                               `(("Stripe-Version" . ,*api-version*))))
-                                   :parameters (values (normalize-parameters params))
-                                   ;; For CCL.
-                                   :deadline (+ (get-internal-real-time)
-                                                (* 80 internal-time-units-per-second)))))
-        ((or drakma:drakma-error
-          chunga:syntax-error
-          usocket:socket-condition)
-          (err)
-          (error 'api-connection-error
-                 :message (fmt "Could not connect to Stripe: ~a" err))))
-    (if (<= 200 status 299)
-        (json->object-tree body)
-        (handle-api-error body status url))))
+  (let ((future (make-future)))
+    (let ((url (puri:merge-uris url *api-base*))
+          (drakma:*text-content-types* (list (cons "application" "json"))))
+      (future-handler-case
+       (multiple-future-bind (body status)
+           (das:http-request url
+                             :allow-other-keys t
+                             :method method
+                             :basic-authorization `(,(get-api-key) "")
+                             :form-data nil
+                             :force-ssl t
+                             :connection-timeout 30
+                             :additional-headers `(("Accept-Charset" . ,*charset*)
+                                                   ,@(if (boundp '*api-version*)
+                                                         `(("Stripe-Version" . ,*api-version*))))
+                             :parameters (values (normalize-parameters params))
+                             ;; For CCL.
+                             :deadline (+ (get-internal-real-time)
+                                          (* 80 internal-time-units-per-second)))
+         (let ((body (flexi-streams:octets-to-string body)))
+           (if (<= 200 status 299)
+               (finish future :ok (json->object-tree body))
+               (handler-case (handle-api-error body status url)
+                 (t (e)
+                   (finish future :err (concise-error-message e)))))))
+       (t (e)
+        (finish future :err (fmt "Could not connect to Stripe: ~a" e)))))))
 
 (defun normalize-parameters (alist)
   "Make sure everything is a string and expand any nested alists into
@@ -301,12 +298,15 @@ bracketed arrays."
                (normalize-parameters '((at-period-end . nil)))))
 
 (defun request-instance (class method url &optional params)
-  (let ((data (request method url params)))
-    (cond ((listp data)
-           (plist->instance class data))
-          (t (unless (typep data class)
-               (error "~a is not of type ~a" data class))
-             data))))
+  (let ((future (make-future)))
+    (multiple-future-bind (status data) (request method url params)
+      (ecase status
+        (:ok (finish future :ok (cond ((listp data)
+                                       (plist->instance class data))
+                                      (t (unless (typep data class)
+                                           (error "~a is not of type ~a" data class))
+                                         data))))
+        (:err (finish future :err data))))))
 
 (defun request-update (object params &key (url (instance-url object)))
   (request-instance (class-name (class-of object)) :post url params))
@@ -529,6 +529,7 @@ bracketed arrays."
    status
    amount-refunded
    balance-transaction
+   statement-descriptor
    customer
    description
    dispute

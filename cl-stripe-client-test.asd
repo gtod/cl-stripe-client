@@ -6,5 +6,6 @@
   :author "Paul M. Rodriguez <pmr@ruricolist.com>"
   :license "MIT"
   :depends-on (#:cl-stripe-client
-               #:fiveam)
+               #:fiveam
+               #:cl-async-future)
   :components ((:file "tests")))
