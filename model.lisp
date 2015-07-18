@@ -244,9 +244,7 @@ optionally, trivial CRUD methods."
          (let ((body (flexi-streams:octets-to-string body)))
            (if (<= 200 status 299)
                (finish future :ok (json->object-tree body))
-               (handler-case (handle-api-error body status url)
-                 (t (e)
-                   (finish future :err (concise-error-message e)))))))
+               (finish future :err (list status url body)))))
        (t (e)
         (finish future :err (fmt "Could not connect to Stripe: ~a" e)))))))
 
@@ -301,11 +299,11 @@ bracketed arrays."
   (let ((future (make-future)))
     (multiple-future-bind (status data) (request method url params)
       (ecase status
-        (:ok (finish future :ok (cond ((listp data)
-                                       (plist->instance class data))
-                                      (t (unless (typep data class)
-                                           (error "~a is not of type ~a" data class))
-                                         data))))
+        (:ok (cond ((listp data)
+                    (finish future :ok (plist->instance class data)))
+                   (t (if (typep data class)
+                          (finish future :ok data)
+                          (finish future :err (fmt "~a is not of type ~a" data class))))))
         (:err (finish future :err data))))))
 
 (defun request-update (object params &key (url (instance-url object)))
